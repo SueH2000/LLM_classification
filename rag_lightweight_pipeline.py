@@ -453,6 +453,55 @@ def run(cfg: Config) -> Path:
     return out_csv
 
 
+
+
+def run_notebook(
+    jsonl_path: str,
+    labeled_csv_path: Optional[str] = None,
+    out_dir: str = "outputs_rag",
+    llm_mode: str = "unclear_only",
+    ollama_model: str = "llama3",
+    ollama_url: str = "http://localhost:11434/api/generate",
+    seed: int = 42,
+    rag_top_k: int = 3,
+    rag_max_examples: int = 30,
+    phrase_hints_path: Optional[str] = None,
+    phrase_hints_per_class: int = 8,
+) -> pd.DataFrame:
+    """Notebook-friendly wrapper around the CLI pipeline.
+
+    Why this helper exists (beginner explanation):
+    - In Jupyter, passing Python variables is easier than building shell commands.
+    - This wrapper builds the same Config object used by CLI, so behavior stays aligned.
+    - It returns a DataFrame directly so you can inspect results immediately.
+
+    Example (inside notebook):
+        preds = run_notebook(
+            jsonl_path="pmc_gse_articles_clean.jsonl",
+            labeled_csv_path="manual_ground_truth_with_GSE_links_REFRESHED.csv",
+            llm_mode="unclear_only",
+            ollama_model="llama3.1:8b",
+        )
+        preds.head()
+    """
+    cfg = Config(
+        jsonl_path=Path(jsonl_path),
+        out_dir=Path(out_dir),
+        labeled_csv_path=Path(labeled_csv_path) if labeled_csv_path else None,
+        ollama_url=ollama_url,
+        ollama_model=ollama_model,
+        llm_mode=llm_mode,
+        seed=seed,
+        rag_top_k=rag_top_k,
+        rag_max_examples=rag_max_examples,
+        phrase_hints_path=Path(phrase_hints_path) if phrase_hints_path else None,
+        phrase_hints_per_class=phrase_hints_per_class,
+    )
+
+    out_csv = run(cfg)
+    return pd.read_csv(out_csv)
+
+
 def parse_args() -> Config:
     """Parse CLI arguments and map them into a Config object."""
     p = argparse.ArgumentParser(description="Reproducible classification with lightweight RAG")

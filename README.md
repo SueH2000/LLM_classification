@@ -353,3 +353,47 @@ What this does:
 - If prompt becomes noisy, reduce hint count before changing model
 - Compare with/without `--phrase-hints-path` on same split
 - Keep `--llm-mode unclear_only` first for stable cost and easier debugging
+
+
+## Jupyter-friendly usage (recommended if you mainly work in notebooks)
+
+If you mainly run experiments in Jupyter, you can import and call both scripts directly as Python functions.
+This keeps reproducibility while giving notebook convenience.
+
+### A) RAG pipeline inside notebook
+
+```python
+from rag_lightweight_pipeline import run_notebook
+
+preds = run_notebook(
+    jsonl_path="pmc_gse_articles_clean.jsonl",
+    labeled_csv_path="manual_ground_truth_with_GSE_links_REFRESHED.csv",
+    llm_mode="unclear_only",
+    ollama_model="llama3.1:8b",
+    phrase_hints_path="outputs_evidence_modeling/mined_phrases.json",  # optional
+    phrase_hints_per_class=8,
+)
+
+preds.head()
+```
+
+### B) Evidence modeling inside notebook
+
+```python
+from evidence_modeling import run_notebook
+
+metrics = run_notebook(
+    labeled_csv_path="manual_ground_truth_with_GSE_links_REFRESHED.csv",
+    jsonl_path="pmc_gse_articles_clean.jsonl",
+    test_size=0.2,
+    random_state=42,
+)
+
+metrics
+```
+
+### Why this is useful
+
+- You still use the same reproducible script logic.
+- You avoid long shell commands while exploring in notebook cells.
+- You immediately get pandas DataFrames for plotting/error analysis.

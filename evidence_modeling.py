@@ -349,6 +349,49 @@ def train_and_compare(cfg: ModelingConfig) -> None:
     print(metrics_df)
 
 
+
+
+def run_notebook(
+    labeled_csv_path: str,
+    jsonl_path: Optional[str] = None,
+    out_dir: str = "outputs_evidence_modeling",
+    test_size: float = 0.2,
+    random_state: int = 42,
+    top_k_phrases: int = 40,
+    ngram_min: int = 1,
+    ngram_max: int = 3,
+    min_df: int = 2,
+    max_features: int = 20000,
+) -> pd.DataFrame:
+    """Notebook-friendly wrapper for systematic evidence modeling.
+
+    This wrapper mirrors CLI behavior but accepts Python variables directly and
+    returns the main comparison table as a DataFrame for immediate notebook use.
+
+    Example:
+        metrics = run_notebook(
+            labeled_csv_path="manual_ground_truth_with_GSE_links_REFRESHED.csv",
+            jsonl_path="pmc_gse_articles_clean.jsonl",
+        )
+        metrics
+    """
+    cfg = ModelingConfig(
+        labeled_csv_path=Path(labeled_csv_path),
+        jsonl_path=Path(jsonl_path) if jsonl_path else None,
+        out_dir=Path(out_dir),
+        test_size=test_size,
+        random_state=random_state,
+        top_k_phrases=top_k_phrases,
+        ngram_min=ngram_min,
+        ngram_max=ngram_max,
+        min_df=min_df,
+        max_features=max_features,
+    )
+
+    train_and_compare(cfg)
+    return pd.read_csv(cfg.out_dir / "model_comparison.csv")
+
+
 def parse_args() -> ModelingConfig:
     p = argparse.ArgumentParser(description="Train and compare systematic evidence models")
     p.add_argument("--labeled-csv-path", type=Path, required=True)
