@@ -82,6 +82,8 @@ class Config:
     timeout_read: int = 120
     rag_top_k: int = 3
     rag_max_examples: int = 30
+    phrase_hints_path: Optional[Path] = None
+    phrase_hints_per_class: int = 8
 
 
 def set_global_seed(seed: int) -> None:
@@ -270,7 +272,38 @@ class ExampleRetriever:
         return rows
 
 
-def build_prompt(accessions: str, evidence: str, rag_examples: List[Dict[str, str]]) -> str:
+
+
+def load_phrase_hints(path: Optional[Path], per_class: int = 8) -> Dict[str, List[str]]:
+    """Load mined phrases (from evidence_modeling.py) for prompt guidance.
+
+    Expected JSON format:
+      {"Primary": [{"phrase": "...", "score": ...}, ...], "Reuse": [...]}
+    """
+    if path is None or not path.exists():
+        return {"Primary": [], "Reuse": []}
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"Primary": [], "Reuse": []}
+
+    out: Dict[str, List[str]] = {"Primary": [], "Reuse": []}
+    for cls in ["Primary", "Reuse"]:
+        items = data.get(cls, [])
+        phrases: List[str] = []
+        for it in items:
+            if isinstance(it, dict):
+                ph = str(it.get("phrase", "")).strip()
+            else:
+                ph = str(it).strip()
+            if ph:
+                phrases.append(ph)
+        out[cls] = phrases[: max(0, int(per_class))]
+    return out
+
+
+def build_prompt(accessions: str, evidence: str, rag_examples: List[Dict[str, str]], phrase_hints: Dict[str, List[str]]) -> str:
     """Assemble final LLM prompt with retrieved examples and target evidence.
 
     We request strict JSON output to simplify downstream parsing and logging.
@@ -283,6 +316,9 @@ def build_prompt(accessions: str, evidence: str, rag_examples: List[Dict[str, st
     else:
         examples_text = "(none)"
 
+    primary_hints = ", ".join(phrase_hints.get("Primary", [])) or "(none)"
+    reuse_hints = ", ".join(phrase_hints.get("Reuse", [])) or "(none)"
+
     return f"""You are classifying whether a paper GENERATED its dataset (Primary) or REUSED a public/external dataset (Reuse).
 
 Definitions:
@@ -292,6 +328,10 @@ Definitions:
 
 Retrieved labeled examples (for guidance only):
 {examples_text}
+
+Mined phrase hints (soft cues, not strict rules):
+- Primary-like phrases: {primary_hints}
+- Reuse-like phrases: {reuse_hints}
 
 Target paper accessions:
 {accessions}
@@ -361,6 +401,7 @@ def run(cfg: Config) -> Path:
     set_global_seed(cfg.seed)
 
     retriever = ExampleRetriever(cfg.labeled_csv_path, max_examples=cfg.rag_max_examples)
+    phrase_hints = load_phrase_hints(cfg.phrase_hints_path, per_class=cfg.phrase_hints_per_class)
 
     rows: List[Dict[str, Any]] = []
     for rec in iter_jsonl(cfg.jsonl_path):
@@ -382,7 +423,7 @@ def run(cfg: Config) -> Path:
         llm_label, llm_conf, llm_reason = h_label, h_conf, "heuristic-only"
 
         if do_llm:
-            prompt = build_prompt(acc_str, evidence, rag_examples)
+            prompt = build_prompt(acc_str, evidence, rag_examples, phrase_hints)
             try:
                 out = call_ollama(prompt, cfg)
                 llm_label, llm_conf, llm_reason = out["label"], out["confidence"], out["rationale"]
@@ -424,6 +465,8 @@ def parse_args() -> Config:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--rag-top-k", type=int, default=3)
     p.add_argument("--rag-max-examples", type=int, default=30)
+    p.add_argument("--phrase-hints-path", type=Path, default=None, help="Optional mined_phrases.json from evidence_modeling.py")
+    p.add_argument("--phrase-hints-per-class", type=int, default=8)
     args = p.parse_args()
 
     return Config(
@@ -436,6 +479,8 @@ def parse_args() -> Config:
         seed=args.seed,
         rag_top_k=args.rag_top_k,
         rag_max_examples=args.rag_max_examples,
+        phrase_hints_path=args.phrase_hints_path,
+        phrase_hints_per_class=args.phrase_hints_per_class,
     )
 
 

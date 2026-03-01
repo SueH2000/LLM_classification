@@ -155,6 +155,8 @@ python rag_lightweight_pipeline.py \
 - `--rag-max-examples`: cap of labeled rows used to build retriever index
 - `--ollama-model`: local model name served by Ollama
 - `--ollama-url`: Ollama endpoint URL (default localhost)
+- `--phrase-hints-path`: optional `mined_phrases.json` used to add class phrase hints into the RAG prompt
+- `--phrase-hints-per-class`: number of mined phrases per class injected into prompt
 
 ---
 
@@ -311,3 +313,43 @@ python evidence_modeling.py \
 - `outputs_evidence_modeling/linear_model_report.txt`
 
 Tip: if `mined_template_rules` beats `static_rules`, you can gradually replace hand-written patterns with mined templates.
+
+
+## How to use evidence-modeling findings to improve RAG prompt and tuning
+
+Great question: the outputs from `evidence_modeling.py` should directly feed your RAG stage.
+
+### 1) Generate mined phrases first
+
+```bash
+python evidence_modeling.py \
+  --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+  --jsonl-path pmc_gse_articles_clean.jsonl \
+  --out-dir outputs_evidence_modeling
+```
+
+This creates `outputs_evidence_modeling/mined_phrases.json`.
+
+### 2) Use mined phrases as prompt hints in RAG
+
+```bash
+python rag_lightweight_pipeline.py \
+  --jsonl-path pmc_gse_articles_clean.jsonl \
+  --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+  --llm-mode unclear_only \
+  --ollama-model llama3.1:8b \
+  --phrase-hints-path outputs_evidence_modeling/mined_phrases.json \
+  --phrase-hints-per-class 8
+```
+
+What this does:
+- keeps your normal retrieved examples (RAG retrieval)
+- additionally injects mined class phrases as **soft cues** in prompt
+- gives the LLM both case-based context and class-level phrase priors
+
+### 3) Tuning strategy (practical)
+
+- Start with `--phrase-hints-per-class 5~10`
+- If prompt becomes noisy, reduce hint count before changing model
+- Compare with/without `--phrase-hints-path` on same split
+- Keep `--llm-mode unclear_only` first for stable cost and easier debugging
