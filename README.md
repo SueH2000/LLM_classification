@@ -207,12 +207,13 @@ Recommended fields:
 - `abstract`
 - `full_text` (strongly recommended)
 
-### Labeled CSV (for retriever)
+### Labeled CSV (for retriever / evaluation)
 Required:
+- `paper_id`
 - one label column: `ground_truth` or `human_label`
 
 Recommended:
-- `paper_id`, `title`, `abstract`, `full_text`
+- `title`, `abstract`, `full_text` (used as fallback text if JSONL is not supplied)
 
 ---
 
@@ -272,6 +273,17 @@ You asked for a more systematic pipeline. This repo now includes `evidence_model
    - `linear_model` (evidence-based supervised model)
    - Output: `model_comparison.csv`
 
+
+### Matching rule (important)
+
+For the systematic script (`evidence_modeling.py`), labels and articles are matched by `paper_id`:
+
+- CSV provides labels (`paper_id` + `ground_truth`/`human_label`)
+- JSONL provides article text (same `paper_id`)
+- The script performs an **inner join** on `paper_id`
+
+This prevents accidental label/text mismatch and is safer than relying on row order.
+
 ### Why this is better for beginners and maintenance
 
 - You keep a clear baseline (`static_rules`).
@@ -284,6 +296,7 @@ You asked for a more systematic pipeline. This repo now includes `evidence_model
 ```bash
 python evidence_modeling.py \
   --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+  --jsonl-path pmc_gse_articles_clean.jsonl \
   --out-dir outputs_evidence_modeling \
   --top-k-phrases 40 \
   --test-size 0.2 \
