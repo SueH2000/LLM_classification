@@ -245,3 +245,56 @@ Try this order:
 1. Replace TF-IDF retriever with embedding-based retriever.
 2. Add stricter decision schema in prompt (few-shot examples).
 3. Add automatic evaluation script (accuracy/F1/coverage/confusion matrix).
+
+---
+
+## Systematic upgrade: from manual keywords to data-driven evidence modeling
+
+You asked for a more systematic pipeline. This repo now includes `evidence_modeling.py` to do exactly that.
+
+### What this script does
+
+1. **Auto phrase mining from labeled CSV**
+   - Mines top-k discriminative n-grams for `Primary` and `Reuse` from the training split.
+   - Output: `mined_phrases.json`
+
+2. **Convert mined phrases into pattern templates**
+   - Converts phrases into whitespace-tolerant regex templates.
+   - Uses template counts to classify each evidence text.
+
+3. **Train sentence-level linear model on evidence text**
+   - Uses TF-IDF features + Logistic Regression.
+   - Trained on train split only (no leakage).
+
+4. **Compare all versions on the same split**
+   - `static_rules` (your manual-rule style baseline)
+   - `mined_template_rules` (data-driven template rules)
+   - `linear_model` (evidence-based supervised model)
+   - Output: `model_comparison.csv`
+
+### Why this is better for beginners and maintenance
+
+- You keep a clear baseline (`static_rules`).
+- You add data-driven phrase discovery (less guesswork than manual keyword updates).
+- You add a supervised model for stronger generalization.
+- You compare everything on one fixed split, so improvements are measurable.
+
+### Run command
+
+```bash
+python evidence_modeling.py \
+  --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+  --out-dir outputs_evidence_modeling \
+  --top-k-phrases 40 \
+  --test-size 0.2 \
+  --random-state 42
+```
+
+### Main outputs
+
+- `outputs_evidence_modeling/model_comparison.csv`
+- `outputs_evidence_modeling/test_predictions.csv`
+- `outputs_evidence_modeling/mined_phrases.json`
+- `outputs_evidence_modeling/linear_model_report.txt`
+
+Tip: if `mined_template_rules` beats `static_rules`, you can gradually replace hand-written patterns with mined templates.
