@@ -82,6 +82,9 @@ class Config:
     timeout_read: int = 120
     rag_top_k: int = 3
     rag_max_examples: int = 30
+    rag_per_label_cap: int = 2
+    rag_min_similarity: float = 0.05
+    rag_candidate_pool: int = 12
     phrase_hints_path: Optional[Path] = None
     phrase_hints_per_class: int = 8
 
@@ -224,7 +227,7 @@ class ExampleRetriever:
     - very fast to iterate for small/medium labeled sets
     """
 
-    def __init__(self, csv_path: Optional[Path], max_examples: int = 30):
+    def __init__(self, csv_path: Optional[Path], max_examples: int = 30, seed: int = 42):
         self.df: Optional[pd.DataFrame] = None
         self.vectorizer: Optional[TfidfVectorizer] = None
         self.matrix = None
@@ -246,29 +249,61 @@ class ExampleRetriever:
             work.get("title", "").fillna("") + " " + work.get("abstract", "").fillna("") + " " + work.get("full_text", "").fillna("")
         ).str.replace(r"\s+", " ", regex=True)
 
-        work = work.head(max_examples).reset_index(drop=True)
+        # Keep labels balanced so retrieval does not overfit to whichever class
+        # appears first or appears more often in the labeled CSV.
+        per_label_budget = max(1, max_examples // 2)
+        sampled_parts: List[pd.DataFrame] = []
+        for label in ["Primary", "Reuse"]:
+            part = work[work["label"] == label]
+            if part.empty:
+                continue
+            sampled_parts.append(part.sample(n=min(per_label_budget, len(part)), random_state=seed))
+
+        if sampled_parts:
+            work = pd.concat(sampled_parts, ignore_index=True)
+        if len(work) > max_examples:
+            work = work.sample(n=max_examples, random_state=seed)
+        work = work.reset_index(drop=True)
         self.vectorizer = TfidfVectorizer(max_features=6000, ngram_range=(1, 2), stop_words="english")
         self.matrix = self.vectorizer.fit_transform(work["text_for_retrieval"])
         self.df = work
 
-    def retrieve(self, query_text: str, top_k: int = 3) -> List[Dict[str, str]]:
+    def retrieve(
+        self,
+        query_text: str,
+        top_k: int = 3,
+        min_similarity: float = 0.05,
+        candidate_pool: int = 12,
+        per_label_cap: int = 2,
+    ) -> List[Dict[str, str]]:
         """Return top-k nearest labeled examples for prompt augmentation."""
         if self.df is None or self.vectorizer is None or self.matrix is None:
             return []
         qv = self.vectorizer.transform([query_text])
         sims = cosine_similarity(qv, self.matrix).flatten()
-        idxs = np.argsort(-sims)[:top_k]
+        idxs = np.argsort(-sims)[: max(top_k, candidate_pool)]
         rows = []
+        per_label_count: Dict[str, int] = {"Primary": 0, "Reuse": 0}
         for i in idxs:
+            sim = float(sims[i])
+            if sim < min_similarity:
+                continue
             row = self.df.iloc[int(i)]
+            label = str(row["label"])
+            if per_label_count.get(label, 0) >= per_label_cap:
+                continue
+
             rows.append(
                 {
                     "paper_id": str(row.get("paper_id", "")),
-                    "label": str(row["label"]),
-                    "score": f"{float(sims[i]):.3f}",
+                    "label": label,
+                    "score": f"{sim:.3f}",
                     "snippet": str(row.get("text_for_retrieval", ""))[:280],
                 }
             )
+            per_label_count[label] = per_label_count.get(label, 0) + 1
+            if len(rows) >= top_k:
+                break
         return rows
 
 
@@ -400,7 +435,7 @@ def run(cfg: Config) -> Path:
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     set_global_seed(cfg.seed)
 
-    retriever = ExampleRetriever(cfg.labeled_csv_path, max_examples=cfg.rag_max_examples)
+    retriever = ExampleRetriever(cfg.labeled_csv_path, max_examples=cfg.rag_max_examples, seed=cfg.seed)
     phrase_hints = load_phrase_hints(cfg.phrase_hints_path, per_class=cfg.phrase_hints_per_class)
 
     rows: List[Dict[str, Any]] = []
@@ -417,7 +452,13 @@ def run(cfg: Config) -> Path:
         )
 
         h_label, h_conf = heuristic_triage(evidence, acc)
-        rag_examples = retriever.retrieve(evidence or text, top_k=cfg.rag_top_k)
+        rag_examples = retriever.retrieve(
+            evidence or text,
+            top_k=cfg.rag_top_k,
+            min_similarity=cfg.rag_min_similarity,
+            candidate_pool=cfg.rag_candidate_pool,
+            per_label_cap=cfg.rag_per_label_cap,
+        )
 
         do_llm = cfg.llm_mode == "all" or (cfg.llm_mode == "unclear_only" and h_label == "Unclear")
         llm_label, llm_conf, llm_reason = h_label, h_conf, "heuristic-only"
@@ -465,6 +506,9 @@ def run_notebook(
     seed: int = 42,
     rag_top_k: int = 3,
     rag_max_examples: int = 30,
+    rag_per_label_cap: int = 2,
+    rag_min_similarity: float = 0.05,
+    rag_candidate_pool: int = 12,
     phrase_hints_path: Optional[str] = None,
     phrase_hints_per_class: int = 8,
 ) -> pd.DataFrame:
@@ -494,6 +538,9 @@ def run_notebook(
         seed=seed,
         rag_top_k=rag_top_k,
         rag_max_examples=rag_max_examples,
+        rag_per_label_cap=rag_per_label_cap,
+        rag_min_similarity=rag_min_similarity,
+        rag_candidate_pool=rag_candidate_pool,
         phrase_hints_path=Path(phrase_hints_path) if phrase_hints_path else None,
         phrase_hints_per_class=phrase_hints_per_class,
     )
@@ -514,6 +561,9 @@ def parse_args() -> Config:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--rag-top-k", type=int, default=3)
     p.add_argument("--rag-max-examples", type=int, default=30)
+    p.add_argument("--rag-per-label-cap", type=int, default=2)
+    p.add_argument("--rag-min-similarity", type=float, default=0.05)
+    p.add_argument("--rag-candidate-pool", type=int, default=12)
     p.add_argument("--phrase-hints-path", type=Path, default=None, help="Optional mined_phrases.json from evidence_modeling.py")
     p.add_argument("--phrase-hints-per-class", type=int, default=8)
     args = p.parse_args()
@@ -528,6 +578,9 @@ def parse_args() -> Config:
         seed=args.seed,
         rag_top_k=args.rag_top_k,
         rag_max_examples=args.rag_max_examples,
+        rag_per_label_cap=args.rag_per_label_cap,
+        rag_min_similarity=args.rag_min_similarity,
+        rag_candidate_pool=args.rag_candidate_pool,
         phrase_hints_path=args.phrase_hints_path,
         phrase_hints_per_class=args.phrase_hints_per_class,
     )
