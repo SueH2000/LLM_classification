@@ -504,6 +504,13 @@ def run_notebook(
     ollama_model: str = "llama3",
     ollama_url: str = "http://localhost:11434/api/generate",
     seed: int = 42,
+    win_before: int = 350,
+    win_after: int = 900,
+    max_evidence_chars: int = 2200,
+    temperature: float = 0.0,
+    num_predict: int = 220,
+    timeout_connect: int = 10,
+    timeout_read: int = 120,
     rag_top_k: int = 3,
     rag_max_examples: int = 30,
     rag_per_label_cap: int = 2,
@@ -527,6 +534,10 @@ def run_notebook(
             ollama_model="llama3.1:8b",
         )
         preds.head()
+
+    Design note for learners:
+    - We intentionally expose most config knobs here so notebook usage can
+      match CLI usage. This reduces "works in CLI but not in notebook" drift.
     """
     cfg = Config(
         jsonl_path=Path(jsonl_path),
@@ -536,6 +547,13 @@ def run_notebook(
         ollama_model=ollama_model,
         llm_mode=llm_mode,
         seed=seed,
+        win_before=win_before,
+        win_after=win_after,
+        max_evidence_chars=max_evidence_chars,
+        temperature=temperature,
+        num_predict=num_predict,
+        timeout_connect=timeout_connect,
+        timeout_read=timeout_read,
         rag_top_k=rag_top_k,
         rag_max_examples=rag_max_examples,
         rag_per_label_cap=rag_per_label_cap,

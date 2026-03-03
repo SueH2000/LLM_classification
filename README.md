@@ -225,6 +225,59 @@ Why these extra RAG settings help:
 
 ---
 
+## Jupyter Notebook workflow (step-by-step for beginners)
+
+If you used to run experiments in notebooks, use the built-in `run_notebook(...)`
+helper. It calls the same core pipeline as CLI, so logic stays consistent.
+
+### 1) Install dependencies in your notebook environment
+
+```python
+!pip install -U -r requirements.txt
+```
+
+### 2) Make sure Ollama is running (outside notebook terminal)
+
+```bash
+ollama serve
+ollama pull llama3.1:8b
+```
+
+### 3) Run pipeline from a notebook cell
+
+```python
+from rag_lightweight_pipeline import run_notebook
+
+preds = run_notebook(
+    jsonl_path="pmc_gse_articles_clean.jsonl",
+    labeled_csv_path="manual_ground_truth_with_GSE_links_REFRESHED.csv",
+    out_dir="outputs_rag_notebook",
+    llm_mode="unclear_only",
+    ollama_model="llama3.1:8b",
+    rag_top_k=4,
+    rag_max_examples=240,
+    rag_per_label_cap=2,
+    rag_candidate_pool=20,
+    rag_min_similarity=0.08,
+)
+
+preds.head(10)
+```
+
+### 4) Inspect class distribution quickly
+
+```python
+preds["llm_label"].value_counts(dropna=False)
+```
+
+### 5) Troubleshooting (common beginner issues)
+
+- If you see `Connection refused` / timeout: Ollama is not running or wrong `ollama_url`.
+- If you see `ModuleNotFoundError`: install packages in the same kernel environment.
+- If outputs look noisy: increase `rag_min_similarity` a bit (e.g., `0.08 -> 0.12`).
+
+---
+
 ## Reproducibility checklist
 
 1. Keep input dataset versions fixed.
