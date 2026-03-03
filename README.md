@@ -143,6 +143,26 @@ python rag_lightweight_pipeline.py \
   --rag-max-examples 200
 ```
 
+### D) Refined RAG setup (recommended for local Ollama)
+
+```bash
+python rag_lightweight_pipeline.py \
+  --jsonl-path pmc_gse_articles_clean.jsonl \
+  --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+  --llm-mode unclear_only \
+  --ollama-model llama3.1:8b \
+  --rag-top-k 4 \
+  --rag-max-examples 240 \
+  --rag-per-label-cap 2 \
+  --rag-candidate-pool 20 \
+  --rag-min-similarity 0.08
+```
+
+Why these extra RAG settings help:
+- `--rag-per-label-cap 2`: avoids retrieving only one class (better class balance in prompt).
+- `--rag-candidate-pool 20`: first fetch more candidates, then keep the best diverse set.
+- `--rag-min-similarity 0.08`: filters weakly-related examples that may confuse the LLM.
+
 ---
 
 ## Key parameters
@@ -153,10 +173,55 @@ python rag_lightweight_pipeline.py \
 - `--seed`: deterministic seed (default `42`)
 - `--rag-top-k`: number of retrieved examples per query
 - `--rag-max-examples`: cap of labeled rows used to build retriever index
+- `--rag-per-label-cap`: max retrieved examples per class in one prompt (diversity control)
+- `--rag-candidate-pool`: number of retrieval candidates examined before final top-k filtering
+- `--rag-min-similarity`: minimum cosine similarity to keep a retrieved example
 - `--ollama-model`: local model name served by Ollama
 - `--ollama-url`: Ollama endpoint URL (default localhost)
 - `--phrase-hints-path`: optional `mined_phrases.json` used to add class phrase hints into the RAG prompt
 - `--phrase-hints-per-class`: number of mined phrases per class injected into prompt
+
+---
+
+## Beginner-friendly "how to integrate with my local Ollama" checklist
+
+1. **Confirm Ollama is running**
+
+   ```bash
+   ollama serve
+   ```
+
+2. **Pull and test your model**
+
+   ```bash
+   ollama pull llama3.1:8b
+   ollama run llama3.1:8b "Say OK"
+   ```
+
+3. **Run this pipeline with the same model name**
+
+   ```bash
+   python rag_lightweight_pipeline.py \
+     --jsonl-path pmc_gse_articles_clean.jsonl \
+     --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+     --llm-mode unclear_only \
+     --ollama-model llama3.1:8b
+   ```
+
+4. **If your Ollama is not on localhost, pass endpoint explicitly**
+
+   ```bash
+   python rag_lightweight_pipeline.py \
+     --jsonl-path pmc_gse_articles_clean.jsonl \
+     --labeled-csv-path manual_ground_truth_with_GSE_links_REFRESHED.csv \
+     --llm-mode unclear_only \
+     --ollama-model llama3.1:8b \
+     --ollama-url http://<your-host>:11434/api/generate
+   ```
+
+5. **Inspect output files**
+   - `predictions_rag.csv`: final labels/confidence and short reason.
+   - `run_config.json`: exact parameters you used (important for reproducibility).
 
 ---
 
